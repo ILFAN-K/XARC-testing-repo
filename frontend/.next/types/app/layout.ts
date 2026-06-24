@@ -1,4 +1,4 @@
-// File: /Volumes/Xarc/Projects/Xarc_Nexus_Hub/frontend/src/app/layout.tsx
+// File: C:\Users\ilfan\OneDrive\Documents\XARC\Xarc_Nexus_Hub\frontend\src\app\layout.tsx
 import * as entry from '../../../src/app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

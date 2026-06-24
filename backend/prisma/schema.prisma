@@ -1,0 +1,263 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  orgId     String   @unique
+  name      String
+  createdAt DateTime @default(now())
+
+  users   User[]
+  devices Device[]
+  modules Module[]
+  moduleAssignments ModuleSystemAssignment[]
+
+  licenseQuota Int @default(0)
+
+  launchLogs         LaunchLog[]
+  dashboardSnapshots DashboardSnapshot[]
+}
+
+enum UserStatus {
+  PENDING_INVITATION
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model User {
+  id           String  @id @default(cuid())
+  customUserId String? @unique
+  firebaseUid  String? @unique
+
+  fullName String?
+  email    String  @unique
+  password String?
+  role     String  @default("TRAINEE")
+
+  status UserStatus @default(PENDING_INVITATION)
+
+  lastLoginAt    DateTime?
+  lastActivityAt DateTime?
+
+  invitationSentAt     DateTime?
+  invitationToken      String?   @unique
+  invitationExpiresAt  DateTime?
+  invitationAcceptedAt DateTime?
+
+  createdBy String?
+  updatedBy String?
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [orgId])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  isDeleted Boolean @default(false)
+
+  @@index([status])
+  @@index([role])
+  @@index([isDeleted])
+}
+
+model Device {
+  id String @id @default(cuid())
+
+  deviceId     String  @unique
+  friendlyName String?
+
+  machineName String
+
+  os           String?
+  ipAddress    String?
+  agentVersion String?
+
+  status       String  @default("OFFLINE")
+  isRegistered Boolean @default(false)
+  isDisabled   Boolean @default(false)
+
+  registeredAt DateTime?
+  discoveredAt DateTime  @default(now())
+  lastSeen     DateTime?
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [orgId])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  healthScore Int     @default(100)
+  isCritical  Boolean @default(false)
+
+  hardwareUuid      String?
+  primaryMacAddress String?
+  networkInterfaces Json?
+
+  aggregatorInstalled  Boolean   @default(false)
+  aggregatorVersion    String?
+  aggregatorVerifiedAt DateTime?
+  aggregatorLastSeen   DateTime?
+
+  licenses     SystemLicense[]
+  usageMetrics UsageMetric[]
+  commands     DeviceCommand[]
+  moduleAssignments ModuleSystemAssignment[]
+}
+
+model DeviceCommand {
+  id String @id @default(cuid())
+
+  deviceId String
+  device   Device @relation(fields: [deviceId], references: [id])
+
+  type    String
+  payload Json?
+
+  status        String @default("QUEUED")
+  createdBy     String?
+  sentAt        DateTime?
+  completedAt   DateTime?
+  failureReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([deviceId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+
+  action     String
+  entityType String
+  entityId   String
+
+  performedBy String?
+  metadata    Json?
+  ipAddress   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([performedBy])
+  @@index([createdAt])
+}
+
+model LaunchLog {
+  id         String   @id @default(cuid())
+  deviceId   String
+  module     String
+  status     String
+  launchedAt DateTime @default(now())
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [orgId])
+}
+
+model SystemLicense {
+  id         String   @id @default(cuid())
+  moduleName String
+  status     String
+  expiresAt  DateTime
+
+  deviceId String
+  device   Device @relation(fields: [deviceId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([deviceId, moduleName])
+}
+
+model UsageMetric {
+  id String @id @default(cuid())
+
+  deviceId String
+  device   Device @relation(fields: [deviceId], references: [id])
+
+  moduleName String?
+
+  usageHours Float @default(0)
+
+  cpuUsage    Float?
+  memoryUsage Float?
+  diskUsage   Float?
+
+  efficiency Float @default(0)
+
+  metricDate DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([deviceId])
+  @@index([metricDate])
+}
+
+model DashboardSnapshot {
+  id String @id @default(cuid())
+
+  totalUsageHours Float
+  efficiencyScore Float
+
+  snapshotDate DateTime
+
+  createdAt DateTime @default(now())
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [orgId])
+
+  @@index([snapshotDate])
+}
+
+model Module {
+  id                String   @id @default(cuid())
+  moduleId          String   @unique
+  name              String
+  description       String
+  iconKey           String   @default("box")
+  category          String
+  version           String
+  licenseType       String   @default("Perpetual")
+  status            String   @default("ACTIVE")
+  purchasedLicenses Int      @default(0)
+  
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [orgId])
+
+  assignments       ModuleSystemAssignment[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
+model ModuleSystemAssignment {
+  id             String   @id @default(cuid())
+  moduleId       String
+  deviceId       String
+  
+  assignedAt     DateTime @default(now())
+  assignedBy     String?
+  createdAt      DateTime @default(now())
+
+  module         Module   @relation(fields: [moduleId], references: [id])
+  device         Device   @relation(fields: [deviceId], references: [id])
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [orgId])
+
+  @@unique([moduleId, deviceId])
+  @@index([organizationId])
+  @@index([deviceId])
+}

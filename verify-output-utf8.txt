@@ -1,0 +1,59 @@
+﻿Starting NestJS server for E2E Verification...
+WebSocket Gateway initialized
+
+--- Seeding Test Data ---
+Created Org A: cmqhoevy500009j9tx8ztsr6s with Admin: adminA@e2e.com
+Created Org B: cmqhoevy800019j9tisng8e3a with User: userB@e2e.com
+Server running at http://[::1]:64251
+
+--- 1. Testing GET /admin/users/roles ---
+Status: 500
+Response: {
+  "statusCode": 500,
+  "message": "Internal server error"
+}
+
+--- 2. Testing POST /admin/users (Create User) ---
+Status: 500
+Response: {
+  "statusCode": 500,
+  "message": "Internal server error"
+}
+Error: newUserId not found. Response: {"statusCode":500,"message":"Internal server error"}
+
+--- 3. Testing GET /admin/users (Search & Filters) ---
+Status: 500
+Response (Total): undefined
+Response (Items): undefined
+
+--- 4. Testing GET /admin/users?role=MANAGER ---
+Status: 500
+Response (Total): undefined
+
+--- 5. Testing GET /admin/users?status=PENDING_INVITATION ---
+Status: 500
+Response (Total): undefined
+
+--- 6. Testing GET /admin/users/stats ---
+Status: 500
+Response: {
+  "statusCode": 500,
+  "message": "Internal server error"
+}
+
+--- 7. Testing Cross-Tenant Isolation ---
+Attempting GET /admin/users/cmqhoevyk00059j9tp043t8ab/profile (Belongs to Org B)
+Status: 500
+Response: {
+  "statusCode": 500,
+  "message": "Internal server error"
+}
+
+--- 8. Testing Role Restriction (Creating SUPERADMIN) ---
+Status: 500
+Response: {
+  "statusCode": 500,
+  "message": "Internal server error"
+}
+
+--- Verification Complete ---

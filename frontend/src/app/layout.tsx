@@ -1,14 +1,27 @@
-import './globals.css';
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+import { AuthProvider } from '@/context/AuthContext';
 
-export const metadata = {
-  title: 'XARC Nexus Hub',
-  description: 'Centralized XR management hub for XARC Nexus'
+const inter = Inter({ subsets: ["latin"] });
+
+export const metadata: Metadata = {
+  title: "XARC Nexus Hub",
+  description: "Centralized hub for XARC operations.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className={inter.className}>
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+      </body>
     </html>
   );
 }

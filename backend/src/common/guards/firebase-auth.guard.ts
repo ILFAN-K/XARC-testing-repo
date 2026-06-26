@@ -32,13 +32,15 @@ export class FirebaseAuthGuard implements CanActivate {
         throw new UnauthorizedException({ success: false, message: 'User not found in database. Please sync/register first.' });
       }
 
-      // Ensure Firebase UID is synced if it was missing
-      if (!user.firebaseUid) {
-        await this.prisma.user.update({
-          where: { id: user.id },
-          data: { firebaseUid: decodedToken.uid },
-        });
-        user.firebaseUid = decodedToken.uid;
+      // Check if user account is deleted or suspended/inactive
+      if (user.isDeleted === true) {
+        throw new UnauthorizedException({ success: false, message: 'Account has been deleted' });
+      }
+      if (user.status === 'SUSPENDED') {
+        throw new UnauthorizedException({ success: false, message: 'Account is suspended' });
+      }
+      if (user.status === 'INACTIVE') {
+        throw new UnauthorizedException({ success: false, message: 'Account is inactive' });
       }
 
       // Attach user to request
@@ -47,11 +49,12 @@ export class FirebaseAuthGuard implements CanActivate {
         email: user.email,
         role: user.role,
         firebaseUid: user.firebaseUid,
-        organizationId: (user as any).organizationId || null,
+        organizationId: user.organizationId || null,
       };
 
       return true;
     } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
       throw new UnauthorizedException({ success: false, message: 'Invalid or expired Firebase token' });
     }
   }

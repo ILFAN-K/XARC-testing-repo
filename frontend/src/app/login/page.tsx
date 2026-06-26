@@ -56,7 +56,11 @@ function LoginPageContent() {
     try {
       const result = await login(email, password);
       const redirect = searchParams.get('redirect');
-      router.push(redirect || result.redirectPath || getDashboardPath('ADMIN'));
+      // Validate redirect is a safe relative path (prevent open redirect)
+      const safeRedirect = redirect && redirect.startsWith('/') && !redirect.startsWith('//') && !redirect.includes('://') 
+        ? redirect 
+        : null;
+      router.push(safeRedirect || result.redirectPath || getDashboardPath('ADMIN'));
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {

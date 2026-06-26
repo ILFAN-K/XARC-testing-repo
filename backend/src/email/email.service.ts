@@ -8,7 +8,8 @@ class MockEmailProvider implements IEmailProvider {
   private readonly logger = new Logger(MockEmailProvider.name);
 
   async sendInvitationEmail(email: string, fullName: string, organizationName: string, invitationToken: string): Promise<void> {
-    const inviteUrl = `http://localhost:3000/invite/${invitationToken}`;
+    const baseUrl = process.env.INVITE_BASE_URL || 'http://localhost:3000/invite';
+    const inviteUrl = `${baseUrl}/${invitationToken}`;
     
     this.logger.log(`\n======================================================\n[EMAIL] MOCK EMAIL SENT\nTo: ${email} (${fullName})\nOrganization: ${organizationName}\nSubject: You've been invited to XR Nexus\n\nInvitation Link:\n${inviteUrl}\n======================================================`);
   }

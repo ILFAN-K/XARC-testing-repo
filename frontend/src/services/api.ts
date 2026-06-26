@@ -21,6 +21,18 @@ export class ApiError extends Error {
   }
 }
 
+/** Attempt to extract a meaningful error message from the API response body. */
+async function parseApiError(res: Response): Promise<ApiError> {
+  let message: string | undefined;
+  try {
+    const body = await res.json();
+    message = body?.message || body?.error || undefined;
+  } catch {
+    // Response body is not JSON — fall through to default message
+  }
+  return new ApiError(res.status, res.statusText, message);
+}
+
 /* ---- Auth token store ---- */
 let _authToken: string | null = null;
 
@@ -64,7 +76,7 @@ export async function apiGet<T>(endpoint: string): Promise<T> {
   });
 
   if (!res.ok) {
-    throw new ApiError(res.status, res.statusText);
+    throw await parseApiError(res);
   }
 
   return res.json() as Promise<T>;
@@ -83,7 +95,7 @@ export async function apiPost<TBody, TResponse>(
   });
 
   if (!res.ok) {
-    throw new ApiError(res.status, res.statusText);
+    throw await parseApiError(res);
   }
 
   return res.json() as Promise<TResponse>;
@@ -102,7 +114,7 @@ export async function apiPatch<TBody, TResponse>(
   });
 
   if (!res.ok) {
-    throw new ApiError(res.status, res.statusText);
+    throw await parseApiError(res);
   }
 
   return res.json() as Promise<TResponse>;
@@ -119,7 +131,7 @@ export async function apiDelete<TResponse>(
   });
 
   if (!res.ok) {
-    throw new ApiError(res.status, res.statusText);
+    throw await parseApiError(res);
   }
 
   return res.json() as Promise<TResponse>;

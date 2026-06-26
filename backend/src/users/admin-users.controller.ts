@@ -40,7 +40,7 @@ import {
 @ApiTags('Admin Users')
 @ApiBearerAuth()
 @UseGuards(FirebaseAuthGuard, RolesGuard)
-@Roles('ADMIN')
+@Roles('SUPERADMIN', 'ADMIN')
 @Controller('admin/users')
 export class AdminUsersController {
   constructor(private readonly adminUsersService: AdminUsersService) {}

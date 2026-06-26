@@ -22,8 +22,9 @@ import { LaunchAllDevicesDto } from './dto/launch-all-devices.dto';
 import { UpdateDeviceNameDto } from './dto/update-device-name.dto';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 import { AssignLicenseDto } from './dto/assign-license.dto';
+import { InstallAggregatorDto } from './dto/install-aggregator.dto';
 
-// @UseGuards(FirebaseAuthGuard, RolesGuard)
+@UseGuards(FirebaseAuthGuard, RolesGuard)
 @Controller('devices')
 export class DevicesController {
   constructor(
@@ -81,6 +82,12 @@ export class DevicesController {
   @Roles('SUPERADMIN', 'ADMIN')
   getCompliance(@CurrentUser() user: any) {
     return this.devicesService.getCompliance(user.organizationId);
+  }
+
+  @Get('licenses/available')
+  @Roles('SUPERADMIN', 'ADMIN')
+  getAvailableLicenses(@CurrentUser() user: any) {
+    return this.devicesService.getAvailableLicenses(user.organizationId);
   }
 
   // ─── Device Details ─────────────────────────────────────────────
@@ -149,6 +156,7 @@ export class DevicesController {
       deviceId,
       dto.friendlyName,
       user?.sub,
+      user.organizationId,
     );
   }
 
@@ -160,7 +168,7 @@ export class DevicesController {
     @Param('deviceId') deviceId: string,
     @CurrentUser() user: any,
   ) {
-    return this.devicesService.disableDevice(deviceId, user?.sub);
+    return this.devicesService.disableDevice(deviceId, user?.sub, user.organizationId);
   }
 
   @Patch(':deviceId/enable')
@@ -169,7 +177,7 @@ export class DevicesController {
     @Param('deviceId') deviceId: string,
     @CurrentUser() user: any,
   ) {
-    return this.devicesService.enableDevice(deviceId, user?.sub);
+    return this.devicesService.enableDevice(deviceId, user?.sub, user.organizationId);
   }
 
   @Delete(':deviceId')
@@ -178,7 +186,7 @@ export class DevicesController {
     @Param('deviceId') deviceId: string,
     @CurrentUser() user: any,
   ) {
-    return this.devicesService.removeDevice(deviceId, user?.sub);
+    return this.devicesService.removeDevice(deviceId, user?.sub, user.organizationId);
   }
 
   // ─── Command Execution ──────────────────────────────────────────
@@ -237,19 +245,13 @@ export class DevicesController {
   @Post('install-aggregator')
   @Roles('SUPERADMIN', 'ADMIN')
   async installAggregator(
-    @Body() body: { deviceIds?: string[]; all?: boolean },
+    @Body() body: InstallAggregatorDto,
     @CurrentUser() user: any,
   ) {
     return this.devicesService.installAggregatorBulk(body.deviceIds || [], !!body.all, user?.sub, user?.organizationId);
   }
 
   // ─── License Management ─────────────────────────────────────────
-
-  @Get('licenses/available')
-  @Roles('SUPERADMIN', 'ADMIN')
-  getAvailableLicenses(@CurrentUser() user: any) {
-    return this.devicesService.getAvailableLicenses(user.organizationId);
-  }
 
   @Post(':deviceId/license')
   @Roles('SUPERADMIN', 'ADMIN')
@@ -263,6 +265,7 @@ export class DevicesController {
       dto.moduleName,
       dto.expiresAt,
       user?.sub,
+      user.organizationId,
     );
   }
 
@@ -277,6 +280,7 @@ export class DevicesController {
       deviceId,
       licenseId,
       user?.sub,
+      user.organizationId,
     );
   }
 }

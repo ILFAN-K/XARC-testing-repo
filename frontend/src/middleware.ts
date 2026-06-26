@@ -18,9 +18,14 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Redirect authenticated users away from auth pages
+  // Redirect authenticated users away from auth pages.
+  // Go directly to /admin/dashboard instead of '/' to avoid an
+  // unnecessary client-side redirect hop through the root page.
+  // The root page just checks auth and redirects to the dashboard
+  // anyway, but this extra hop causes Edge to compile '/' and can
+  // trigger a redirect loop when the cookie isn't yet visible.
   if (isAuthPage && session) {
-    return NextResponse.redirect(new URL('/', request.url));
+    return NextResponse.redirect(new URL('/admin/dashboard', request.url));
   }
 
   return NextResponse.next();

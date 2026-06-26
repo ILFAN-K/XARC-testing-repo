@@ -160,6 +160,9 @@ export class DevicesService {
 
   async getDeviceById(deviceId: string, organizationId?: string) {
     const device = await this.devicePersistenceService.getDeviceById(deviceId);
+    if (organizationId && device.organizationId !== organizationId) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
     const isConnected = this.gateway.isDeviceConnected(deviceId);
 
     const mapped = {
@@ -324,11 +327,18 @@ export class DevicesService {
     deviceId: string,
     friendlyName: string,
     performedBy?: string,
+    organizationId?: string,
   ) {
     const existing = await this.prisma.device.findUnique({
       where: { deviceId },
-      select: { friendlyName: true },
+      select: { friendlyName: true, organizationId: true },
     });
+    if (!existing) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
+    if (organizationId && existing.organizationId !== organizationId) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
 
     const device = await this.devicePersistenceService.updateFriendlyName(
       deviceId,
@@ -351,7 +361,11 @@ export class DevicesService {
 
   // ─── Device State ───────────────────────────────────────────────
 
-  async disableDevice(deviceId: string, performedBy?: string) {
+  async disableDevice(deviceId: string, performedBy?: string, organizationId?: string) {
+    const deviceCheck = await this.prisma.device.findUnique({ where: { deviceId }, select: { organizationId: true } });
+    if (!deviceCheck) throw new NotFoundException(`Device ${deviceId} not found`);
+    if (organizationId && deviceCheck.organizationId !== organizationId) throw new NotFoundException(`Device ${deviceId} not found`);
+
     const device = await this.devicePersistenceService.disableDevice(deviceId);
 
     await this.auditService.log({
@@ -364,7 +378,11 @@ export class DevicesService {
     return device;
   }
 
-  async enableDevice(deviceId: string, performedBy?: string) {
+  async enableDevice(deviceId: string, performedBy?: string, organizationId?: string) {
+    const deviceCheck = await this.prisma.device.findUnique({ where: { deviceId }, select: { organizationId: true } });
+    if (!deviceCheck) throw new NotFoundException(`Device ${deviceId} not found`);
+    if (organizationId && deviceCheck.organizationId !== organizationId) throw new NotFoundException(`Device ${deviceId} not found`);
+
     const device = await this.devicePersistenceService.enableDevice(deviceId);
 
     await this.auditService.log({
@@ -377,7 +395,11 @@ export class DevicesService {
     return device;
   }
 
-  async removeDevice(deviceId: string, performedBy?: string) {
+  async removeDevice(deviceId: string, performedBy?: string, organizationId?: string) {
+    const deviceCheck = await this.prisma.device.findUnique({ where: { deviceId }, select: { organizationId: true } });
+    if (!deviceCheck) throw new NotFoundException(`Device ${deviceId} not found`);
+    if (organizationId && deviceCheck.organizationId !== organizationId) throw new NotFoundException(`Device ${deviceId} not found`);
+
     const device = await this.devicePersistenceService.removeDevice(deviceId);
 
     await this.auditService.log({
@@ -395,7 +417,10 @@ export class DevicesService {
 
   async getDeviceActivity(deviceId: string, organizationId?: string) {
     // Verify device exists
-    await this.devicePersistenceService.getDeviceById(deviceId);
+    const device = await this.devicePersistenceService.getDeviceById(deviceId);
+    if (organizationId && device.organizationId !== organizationId) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
 
     const auditLogs = await this.auditService.getByEntity('DEVICE', deviceId);
     const commands = await this.prisma.deviceCommand.findMany({
@@ -414,6 +439,7 @@ export class DevicesService {
       where: { deviceId },
       select: {
         deviceId: true,
+        organizationId: true,
         healthScore: true,
         isCritical: true,
         status: true,
@@ -422,6 +448,9 @@ export class DevicesService {
     });
 
     if (!device) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
+    if (organizationId && device.organizationId !== organizationId) {
       throw new NotFoundException(`Device ${deviceId} not found`);
     }
 
@@ -453,9 +482,13 @@ export class DevicesService {
   async getDeviceMetrics(deviceId: string, organizationId?: string) {
     const device = await this.prisma.device.findUnique({
       where: { deviceId },
+      select: { id: true, organizationId: true },
     });
 
     if (!device) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
+    if (organizationId && device.organizationId !== organizationId) {
       throw new NotFoundException(`Device ${deviceId} not found`);
     }
 
@@ -817,12 +850,16 @@ export class DevicesService {
     moduleName: string,
     expiresAt?: string,
     performedBy?: string,
+    organizationId?: string,
   ) {
     const device = await this.prisma.device.findUnique({
       where: { deviceId },
     });
 
     if (!device) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
+    if (organizationId && device.organizationId !== organizationId) {
       throw new NotFoundException(`Device ${deviceId} not found`);
     }
 
@@ -870,12 +907,16 @@ export class DevicesService {
     deviceId: string,
     licenseId: string,
     performedBy?: string,
+    organizationId?: string,
   ) {
     const device = await this.prisma.device.findUnique({
       where: { deviceId },
     });
 
     if (!device) {
+      throw new NotFoundException(`Device ${deviceId} not found`);
+    }
+    if (organizationId && device.organizationId !== organizationId) {
       throw new NotFoundException(`Device ${deviceId} not found`);
     }
 

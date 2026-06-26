@@ -6,6 +6,13 @@ namespace VRAgent.Services;
 
 public class HardwareInfoService
 {
+    private readonly ILogger<HardwareInfoService> _logger;
+
+    public HardwareInfoService(ILogger<HardwareInfoService> logger)
+    {
+        _logger = logger;
+    }
+
     public string GetHardwareUuid()
     {
         try
@@ -23,7 +30,7 @@ public class HardwareInfoService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to get Hardware UUID: {ex.Message}");
+            _logger.LogWarning("Failed to get Hardware UUID: {Error}", ex.Message);
         }
         
         return "UNKNOWN-UUID";
@@ -95,7 +102,7 @@ public class HardwareInfoService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to get network info: {ex.Message}");
+            _logger.LogWarning("Failed to get network info: {Error}", ex.Message);
         }
 
         return result;

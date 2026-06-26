@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -8,6 +8,8 @@ import { generateUserId, extractOrgCode } from '../common/utils/id-generator';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+  private static readonly ALLOWED_REGISTRATION_ROLES = ['ADMIN', 'INSTRUCTOR', 'TRAINEE'];
   constructor(
     private prisma: PrismaService,
     private auditService: AuditService,
@@ -49,7 +51,8 @@ export class AuthService {
       const org = await this.prisma.organization.findUnique({ where: { id: organizationId } });
       if (!org) throw new BadRequestException({ success: false, message: 'Invalid organization' });
       const orgCode = extractOrgCode(org.name);
-      const customUserId = await generateUserId(orgCode, role || 'ADMIN', this.prisma);
+      const safeRole = role && AuthService.ALLOWED_REGISTRATION_ROLES.includes(role) ? role : 'TRAINEE';
+      const customUserId = await generateUserId(orgCode, safeRole, this.prisma);
 
       const now = new Date();
       const user = await this.prisma.user.create({
@@ -57,7 +60,7 @@ export class AuthService {
           email,
           fullName,
           firebaseUid: decodedToken.uid,
-          role: role || 'ADMIN',
+          role: safeRole,
           customUserId,
           status: UserStatus.ACTIVE,
           organizationId: org.orgId, // CRITICAL FIX: The relation targets orgId, not id.
@@ -85,7 +88,7 @@ export class AuthService {
         redirectPath: this.getRedirectPath(user.role),
       };
     } catch (error: any) {
-      console.error('Registration backend failure:', error);
+      this.logger.error('Registration backend failure:', error);
       if (error instanceof ConflictException || error instanceof BadRequestException) throw error;
       throw new UnauthorizedException({ success: false, message: error.message || 'Invalid token' });
     }
@@ -285,7 +288,7 @@ export class AuthService {
       if (error.code === 'auth/email-already-exists') {
          throw new ConflictException({ success: false, message: 'An account with this email already exists in the authentication provider.' });
       }
-      throw new BadRequestException({ success: false, message: 'Failed to create account', error: error.message });
+      throw new BadRequestException({ success: false, message: 'Failed to create account' });
     }
   }
 }

@@ -6,63 +6,54 @@ public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
     private readonly SocketService _socketService;
+    private readonly IConfiguration _configuration;
 
     public Worker(
         ILogger<Worker> logger,
-        SocketService socketService)
+        SocketService socketService,
+        IConfiguration configuration)
     {
         _logger = logger;
         _socketService = socketService;
+        _configuration = configuration;
     }
 
-    protected override async Task ExecuteAsync(
-        CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation(
-            "VRAgent started."
-        );
+        _logger.LogInformation("═══ XARC Nexus VR Agent Started ═══");
+
+        var serverUrl = _configuration["ServerUrl"] ?? "http://localhost:3001";
+        _logger.LogInformation("Target backend: {ServerUrl}", serverUrl);
 
         try
         {
-            await _socketService.ConnectAsync(
-                "http://localhost:3001"
-            );
-
-            _logger.LogInformation(
-                "Connected to backend."
-            );
+            await _socketService.ConnectAsync(serverUrl, stoppingToken);
+            _logger.LogInformation("WebSocket connection established");
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                "Failed to connect to backend."
-            );
+            _logger.LogError(ex, "Failed to connect to backend at {ServerUrl}", serverUrl);
         }
 
-        while (!stoppingToken.IsCancellationRequested)
+        // Keep the service alive until cancellation is requested.
+        // Heartbeat and command handling run on their own async loops inside SocketService.
+        try
         {
-            _logger.LogInformation(
-                "Agent running at: {time}",
-                DateTimeOffset.Now
-            );
-
-            await Task.Delay(
-                10000,
-                stoppingToken
-            );
+            await Task.Delay(Timeout.Infinite, stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on shutdown
         }
     }
 
-    public override async Task StopAsync(
-        CancellationToken cancellationToken)
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation(
-            "VRAgent stopping..."
-        );
+        _logger.LogInformation("═══ XARC Nexus VR Agent Stopping ═══");
 
-        await base.StopAsync(
-            cancellationToken
-        );
+        await _socketService.DisconnectAsync();
+        await base.StopAsync(cancellationToken);
+
+        _logger.LogInformation("═══ XARC Nexus VR Agent Stopped ═══");
     }
 }

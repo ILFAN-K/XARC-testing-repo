@@ -17,18 +17,9 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
-  @Get(':id')
-  @Roles('SUPERADMIN')
-  getUser(@Param('id') id: string) {
-    return this.usersService.findOne(id);
-  }
+  // Static routes MUST be defined before parameterized ':id' route
+  // to prevent NestJS from matching 'admin-only' as an :id value.
 
-  @Patch(':id/role')
-  @Roles('SUPERADMIN')
-  updateUserRole(@Param('id') id: string, @Body() updateRoleDto: UpdateRoleDto) {
-    return this.usersService.updateRole(id, updateRoleDto.role);
-  }
-  
   @Get('admin-only')
   @Roles('SUPERADMIN')
   getAdminData(@CurrentUser() user: any) {
@@ -54,5 +45,18 @@ export class UsersController {
       message: 'This is protected data for STUDENT',
       user,
     };
+  }
+
+  // Parameterized routes MUST come after all static routes
+  @Get(':id')
+  @Roles('SUPERADMIN')
+  getUser(@Param('id') id: string) {
+    return this.usersService.findOne(id);
+  }
+
+  @Patch(':id/role')
+  @Roles('SUPERADMIN')
+  updateUserRole(@Param('id') id: string, @Body() updateRoleDto: UpdateRoleDto) {
+    return this.usersService.updateRole(id, updateRoleDto.role);
   }
 }

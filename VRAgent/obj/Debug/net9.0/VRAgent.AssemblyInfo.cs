@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("VRAgent")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0ed1d0c83e595a51126b104a759cd9706c20e252")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c7e3403a1f1991c5f409b28e75251035ba34ee87")]
 [assembly: System.Reflection.AssemblyProductAttribute("VRAgent")]
 [assembly: System.Reflection.AssemblyTitleAttribute("VRAgent")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

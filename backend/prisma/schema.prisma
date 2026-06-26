@@ -161,6 +161,9 @@ model LaunchLog {
 
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [orgId])
+
+  @@index([deviceId])
+  @@index([launchedAt])
 }
 
 model SystemLicense {
@@ -201,6 +204,7 @@ model UsageMetric {
 
   @@index([deviceId])
   @@index([metricDate])
+  @@index([moduleName])
 }
 
 model DashboardSnapshot {

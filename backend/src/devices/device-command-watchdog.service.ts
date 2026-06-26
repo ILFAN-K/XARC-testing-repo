@@ -19,7 +19,6 @@ export class DeviceCommandWatchdogService {
         where: {
           status: { in: ['QUEUED', 'SENT', 'RECEIVED', 'EXECUTING'] },
           createdAt: { lt: fifteenMinutesAgo },
-          type: 'INSTALL_AGGREGATOR', // Currently focused on INSTALL_AGGREGATOR, but can expand
         },
       });
 

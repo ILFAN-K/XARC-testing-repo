@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -35,16 +35,47 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001';
 
+/**
+ * Set a cookie with consistent attributes.
+ * Both setCookie and deleteCookie must use identical path + SameSite
+ * attributes, otherwise browsers (especially Edge) may treat them
+ * as different cookies and fail to delete/overwrite correctly.
+ */
 function setCookie(name: string, value: string, days: number) {
   const expires = new Date(Date.now() + days * 864e5).toUTCString();
   document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
 }
 
 function deleteCookie(name: string) {
-  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax`;
 }
 
-let isManualAuthInProgress = false;
+/**
+ * Verify the cookie was actually written by reading it back.
+ * Edge sometimes needs a microtask tick for document.cookie writes
+ * to be visible to subsequent reads.
+ */
+function waitForCookie(name: string, maxWaitMs = 100): Promise<boolean> {
+  return new Promise((resolve) => {
+    // Fast path: cookie is already visible
+    if (document.cookie.includes(`${name}=`)) {
+      resolve(true);
+      return;
+    }
+    // Slow path: wait for the cookie to appear
+    const start = Date.now();
+    const check = () => {
+      if (document.cookie.includes(`${name}=`)) {
+        resolve(true);
+      } else if (Date.now() - start > maxWaitMs) {
+        resolve(false);
+      } else {
+        requestAnimationFrame(check);
+      }
+    };
+    requestAnimationFrame(check);
+  });
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
@@ -52,17 +83,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
 
+  // Track whether login()/register() is currently handling auth.
+  // Uses a ref instead of module-scoped variable to avoid stale state
+  // persisting across Next.js soft navigations.
+  const manualAuthRef = useRef(false);
+
+  // Track if this provider instance has already been initialized.
+  const hasResolvedRef = useRef(false);
+
   // Listen to Firebase auth state
   useEffect(() => {
+    let isMounted = true;
+
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (!isMounted) return;
+
       setFirebaseUser(fbUser);
+
       if (fbUser) {
-        if (isManualAuthInProgress) {
-          // Skip the backend sync here, because login() or register() handles it
+        if (manualAuthRef.current) {
+          // login()/register() is handling auth — skip backend sync here.
+          // The manual auth flow sets loading/initialized in its own
+          // finally block, so we must NOT call setLoading/setInitialized
+          // here (they'd race with the manual flow's state updates).
           return;
         }
+
         try {
           const token = await fbUser.getIdToken(true);
+          if (!isMounted) return;
+
           // Sync with backend
           const res = await fetch(`${API_BASE}/auth/login`, {
             method: 'POST',
@@ -72,6 +122,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             },
             body: JSON.stringify({}),
           });
+
+          if (!isMounted) return;
+
           if (res.ok) {
             const data = await res.json();
             if (data.success) {
@@ -97,6 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             deleteCookie('__session');
           }
         } catch {
+          if (!isMounted) return;
           setAuthToken(null);
           setUser(null);
           deleteCookie('__session');
@@ -106,15 +160,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         deleteCookie('__session');
       }
-      setLoading(false);
-      setInitialized(true);
+
+      if (isMounted) {
+        hasResolvedRef.current = true;
+        setLoading(false);
+        setInitialized(true);
+      }
     });
-    return () => unsubscribe();
+
+    // Safety timeout: if onAuthStateChanged hasn't resolved within 5 seconds,
+    // force the state to resolve to prevent infinite spinner.
+    const safetyTimer = setTimeout(() => {
+      if (isMounted && !hasResolvedRef.current) {
+        setLoading(false);
+        setInitialized(true);
+      }
+    }, 5000);
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+      clearTimeout(safetyTimer);
+    };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     setLoading(true);
-    isManualAuthInProgress = true;
+    manualAuthRef.current = true;
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
       const token = await cred.user.getIdToken(true);
@@ -141,20 +213,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
       });
       setCookie('__session', '1', 7);
-      
+
+      // CRITICAL FIX: Wait for the cookie to be committed before navigation.
+      // Edge's document.cookie writes are asynchronous — if we navigate
+      // immediately, the Next.js middleware may not see the cookie on the
+      // next server request, causing a redirect to /login → /  loop.
+      await waitForCookie('__session');
+
       // Ensure state is updated before returning
       setFirebaseUser(cred.user);
+      hasResolvedRef.current = true;
       setInitialized(true);
       return { redirectPath: data.redirectPath };
     } finally {
-      isManualAuthInProgress = false;
+      manualAuthRef.current = false;
       setLoading(false);
     }
   }, []);
 
   const register = useCallback(async (email: string, password: string, fullName: string, organizationId: string, role: string) => {
     setLoading(true);
-    isManualAuthInProgress = true;
+    manualAuthRef.current = true;
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       const token = await cred.user.getIdToken(true);
@@ -181,18 +260,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
       });
       setCookie('__session', '1', 7);
-      
+
+      // Wait for cookie to be committed before navigation
+      await waitForCookie('__session');
+
       setFirebaseUser(cred.user);
+      hasResolvedRef.current = true;
       setInitialized(true);
       return { redirectPath: data.redirectPath };
     } finally {
-      isManualAuthInProgress = false;
+      manualAuthRef.current = false;
       setLoading(false);
     }
   }, []);
 
   const logout = useCallback(async () => {
-    isManualAuthInProgress = true;
+    manualAuthRef.current = true;
     try {
       await firebaseSignOut(auth);
       setAuthToken(null);
@@ -200,7 +283,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setFirebaseUser(null);
       deleteCookie('__session');
     } finally {
-      isManualAuthInProgress = false;
+      manualAuthRef.current = false;
     }
   }, []);
 

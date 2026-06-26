@@ -6,18 +6,26 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
+import { OnModuleDestroy, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { DevicePersistenceService } from '../device-persistence/device-persistence.service';
 
+const wsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
+  : ['http://localhost:3000', 'http://localhost:3001'];
+
 @WebSocketGateway({
   cors: {
-    origin: ['http://localhost:3000', 'http://localhost:3001'],
+    origin: wsOrigins,
     credentials: true,
   },
 })
 export class AppGateway
-  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
 {
+  private readonly logger = new Logger(AppGateway.name);
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
   constructor(
     private readonly devicePersistenceService: DevicePersistenceService,
   ) {}
@@ -31,19 +39,26 @@ export class AppGateway
   private socketToDevice = new Map<string, string>();
 
   afterInit(server: Server) {
-    console.log('WebSocket Gateway initialized');
+    this.logger.log('WebSocket Gateway initialized');
 
     // Heartbeat timeout detection: every 30 seconds, mark stale devices OFFLINE
-    setInterval(async () => {
+    this.heartbeatInterval = setInterval(async () => {
       try {
         const result = await this.devicePersistenceService.markStaleDevicesOffline(60);
         if (result.count > 0) {
-          console.log(`Heartbeat timeout: marked ${result.count} stale device(s) OFFLINE`);
+          this.logger.log(`Heartbeat timeout: marked ${result.count} stale device(s) OFFLINE`);
         }
       } catch (error) {
-        console.error('Heartbeat timeout check failed:', error);
+        this.logger.error('Heartbeat timeout check failed:', error);
       }
     }, 30_000);
+  }
+
+  onModuleDestroy() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
   }
 
   handleConnection(client: Socket) {
@@ -51,21 +66,21 @@ export class AppGateway
     const validKey = process.env.AGENT_SECRET_KEY;
     
     if (!validKey) {
-      console.error(`AGENT_SECRET_KEY is not configured in production environment! Rejecting all connections.`);
+      this.logger.error(`AGENT_SECRET_KEY is not configured in production environment! Rejecting all connections.`);
       client.disconnect(true);
       return;
     }
 
     if (agentKey !== validKey) {
-      console.warn(`Unauthorized agent connection attempt from ${client.id}`);
+      this.logger.warn(`Unauthorized agent connection attempt from ${client.id}`);
       client.disconnect(true);
       return;
     }
-    console.log(`Agent Connected: ${client.id}`);
+    this.logger.log(`Agent Connected: ${client.id}`);
   }
 
   async handleDisconnect(client: Socket) {
-    console.log(`Agent Disconnected: ${client.id}`);
+    this.logger.log(`Agent Disconnected: ${client.id}`);
 
     // O(1) lookup using reverse map
     const deviceId = this.socketToDevice.get(client.id);
@@ -75,7 +90,7 @@ export class AppGateway
       if (currentSocket === client.id) {
         await this.devicePersistenceService.markDeviceOffline(deviceId);
         this.connectedDevices.delete(deviceId);
-        console.log(`Device ${deviceId} marked OFFLINE`);
+        this.logger.log(`Device ${deviceId} marked OFFLINE`);
       }
       this.socketToDevice.delete(client.id);
     }
@@ -85,15 +100,17 @@ export class AppGateway
   async handleRegisterDevice(client: Socket, payload: any) {
     const deviceId = payload.DeviceId;
     const machineName = payload.MachineName;
+    const agentVersion = payload.AgentVersion || 'unknown';
+    const ip = payload.IPAddress || 'unknown';
 
-    console.log('REGISTER PAYLOAD:', JSON.stringify(payload, null, 2));
+    this.logger.verbose(`[Register] Full payload: ${JSON.stringify(payload)}`);
 
     // Duplicate connection guard: disconnect old socket if same device reconnects
     const existingSocketId = this.connectedDevices.get(deviceId);
     if (existingSocketId && existingSocketId !== client.id) {
       const existingSocket = this.server.sockets.sockets.get(existingSocketId);
       if (existingSocket) {
-        console.log(`Duplicate connection for ${deviceId}: disconnecting old socket ${existingSocketId}`);
+        this.logger.log(`[Register] Duplicate connection for ${deviceId}: disconnecting old socket`);
         await this.devicePersistenceService.logIdentityEvent('DUPLICATE_DEVICE_CONNECTION', deviceId, {
           oldSocketId: existingSocketId,
           newSocketId: client.id,
@@ -124,20 +141,19 @@ export class AppGateway
       },
     );
 
-    console.log(`Agent Connected: ${deviceId} (${machineName})`);
+    this.logger.log(`[Register] ${deviceId} (${machineName}) connected — Agent v${agentVersion}, IP ${ip}`);
     return { success: true };
   }
 
   @SubscribeMessage('heartbeat')
   async handleHeartbeat(client: Socket, payload: any) {
     const deviceId = payload.DeviceId;
-    console.log('HEARTBEAT PAYLOAD:', JSON.stringify(payload, null, 2));
 
     // Self-healing: if the gateway restarted but the agent is still sending heartbeats, remap it.
     if (deviceId && !this.connectedDevices.has(deviceId)) {
       this.connectedDevices.set(deviceId, client.id);
       this.socketToDevice.set(client.id, deviceId);
-      console.log(`Self-healed connection mapping for device: ${deviceId}`);
+      this.logger.log(`[Heartbeat] Self-healed connection mapping for ${deviceId}`);
     }
 
     if (deviceId) {
@@ -183,7 +199,7 @@ export class AppGateway
         },
       );
 
-    console.log(
+    this.logger.log(
       `Launch command sent to ${deviceId}`,
     );
   }
@@ -195,7 +211,7 @@ export class AppGateway
     }
 
     this.server.to(socketId).emit('install-aggregator', { commandId, ...payload });
-    console.log(`Install Aggregator command sent to ${deviceId}`);
+    this.logger.log(`Install Aggregator command sent to ${deviceId}`);
   }
 
   public sendRestartCommand(deviceId: string) {
@@ -205,12 +221,12 @@ export class AppGateway
     }
 
     this.server.to(socketId).emit('restart-agent', {});
-    console.log(`Restart command sent to ${deviceId}`);
+    this.logger.log(`Restart command sent to ${deviceId}`);
   }
 
   public sendLaunchCommandToAll(module: string, userId?: string) {
     this.server.emit('launch-module', { module, ...(userId ? { userId } : {}) });
-    console.log(`Launch command sent to all devices for module ${module}`);
+    this.logger.log(`Launch command sent to all devices for module ${module}`);
   }
 
   public sendLaunchCommandToMultiple(
@@ -221,11 +237,11 @@ export class AppGateway
     for (const deviceId of deviceIds) {
       const socketId = this.connectedDevices.get(deviceId);
       if (!socketId) {
-        console.log(`Device ${deviceId} is offline, skipping`);
+        this.logger.log(`Device ${deviceId} is offline, skipping`);
         continue;
       }
       this.server.to(socketId).emit('launch-module', { module, ...(userId ? { userId } : {}) });
-      console.log(`Launch command sent to ${deviceId}`);
+      this.logger.log(`Launch command sent to ${deviceId}`);
     }
   }
 
@@ -236,20 +252,29 @@ export class AppGateway
   public isDeviceConnected(deviceId: string): boolean {
     return this.connectedDevices.has(deviceId);
   }
+
+  private static readonly VALID_COMMAND_STATUSES = ['RECEIVED', 'EXECUTING', 'COMPLETED', 'FAILED'];
+
   @SubscribeMessage('command-status')
   async handleCommandStatus(
     client: Socket,
     payload: any,
   ) {
-    console.log(
-      'Command Status:',
-      payload,
-    );
+    const deviceId = this.socketToDevice.get(client.id) || 'unknown';
+    const status = payload.Status;
+    const commandId = payload.CommandId;
+
+    this.logger.log(`[Command] ${deviceId} — ${commandId?.substring(0, 8)}… → ${status}${payload.Message ? ` (${payload.Message})` : ''}`);
+
+    if (!AppGateway.VALID_COMMAND_STATUSES.includes(status)) {
+      this.logger.warn(`[Command] Invalid status received: ${status}`);
+      return { success: false, message: `Invalid status. Must be one of: ${AppGateway.VALID_COMMAND_STATUSES.join(', ')}` };
+    }
 
     await this.devicePersistenceService
       .updateCommandStatus(
-        payload.CommandId,
-        payload.Status,
+        commandId,
+        status,
         payload.Message,
       );
 

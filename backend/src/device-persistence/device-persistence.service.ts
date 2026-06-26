@@ -128,7 +128,7 @@ export class DevicePersistenceService {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const existingLog = await this.prisma.auditLog.findFirst({
       where: {
-        entityType: 'Device',
+        entityType: 'DEVICE',
         entityId: deviceId,
         action,
         createdAt: { gte: twentyFourHoursAgo },
@@ -139,7 +139,7 @@ export class DevicePersistenceService {
       await this.prisma.auditLog.create({
         data: {
           action,
-          entityType: 'Device',
+          entityType: 'DEVICE',
           entityId: deviceId,
           metadata: metadata || {},
           performedBy: 'SYSTEM',
@@ -398,6 +398,11 @@ export class DevicePersistenceService {
       where: { deviceId: device.id },
     });
 
+    // Remove module assignments
+    await this.prisma.moduleSystemAssignment.deleteMany({
+      where: { deviceId: device.id },
+    });
+
     // Reset registration state to push back to discovery
     return this.prisma.device.update({
       where: { deviceId },
@@ -414,14 +419,19 @@ export class DevicePersistenceService {
     const device = await this.prisma.device.findUnique({ where: { deviceId } });
     if (!device) throw new NotFoundException(`Device ${deviceId} not found`);
 
+    const installerUrl = process.env.AGGREGATOR_INSTALLER_URL
+      || 'https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.6.5/npp.8.6.5.Installer.exe';
+    const installerArgs = process.env.AGGREGATOR_INSTALLER_ARGS || '/S';
+    const expectedVersion = process.env.AGGREGATOR_EXPECTED_VERSION || '8.6.5';
+
     return this.prisma.deviceCommand.create({
         data: {
             deviceId: device.id,
             type: 'INSTALL_AGGREGATOR',
             payload: {
-                installerUrl: 'https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v8.6.5/npp.8.6.5.Installer.exe',
-                installerArguments: '/S',
-                expectedVersion: '8.6.5',
+                installerUrl,
+                installerArguments: installerArgs,
+                expectedVersion,
                 checksum: '', // Optional checksum for now, can be enforced by Agent
             },
             status: 'QUEUED',
@@ -429,11 +439,17 @@ export class DevicePersistenceService {
         },
     });
   }
+  private static readonly VALID_COMMAND_STATUSES = ['QUEUED', 'SENT', 'RECEIVED', 'EXECUTING', 'COMPLETED', 'FAILED'];
+
   async updateCommandStatus(
   commandId: string,
   status: string,
   message?: string,
   ) {
+    if (!DevicePersistenceService.VALID_COMMAND_STATUSES.includes(status)) {
+      throw new ConflictException(`Invalid command status: ${status}`);
+    }
+
     return this.prisma.deviceCommand.update({
       where: {
         id: commandId,

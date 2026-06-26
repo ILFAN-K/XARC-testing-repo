@@ -6,7 +6,43 @@ namespace VRAgent.Services;
 
 public class AggregatorDetectionService
 {
+    private readonly ILogger<AggregatorDetectionService> _logger;
+
+    // Cache detection result for 30 seconds to avoid repeated registry/process scans
+    private AggregatorStatus? _cachedStatus;
+    private DateTime _cacheExpiry = DateTime.MinValue;
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(30);
+
+    public AggregatorDetectionService(ILogger<AggregatorDetectionService> logger)
+    {
+        _logger = logger;
+    }
+
     public AggregatorStatus DetectAggregator()
+    {
+        if (_cachedStatus != null && DateTime.UtcNow < _cacheExpiry)
+        {
+            return _cachedStatus;
+        }
+
+        var status = DetectAggregatorInternal();
+        _cachedStatus = status;
+        _cacheExpiry = DateTime.UtcNow + CacheDuration;
+        return status;
+    }
+
+    /// <summary>
+    /// Force a fresh detection, bypassing the cache.
+    /// Called after installation to get an accurate result.
+    /// </summary>
+    public AggregatorStatus DetectAggregatorFresh()
+    {
+        _cachedStatus = null;
+        _cacheExpiry = DateTime.MinValue;
+        return DetectAggregator();
+    }
+
+    private AggregatorStatus DetectAggregatorInternal()
     {
         string? installPath = null;
         
@@ -21,7 +57,10 @@ public class AggregatorDetectionService
                 }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            _logger.LogDebug("Registry detection failed: {Error}", ex.Message);
+        }
 
         // Secondary Detection: Default Paths if Registry fails
         if (string.IsNullOrEmpty(installPath))
@@ -54,7 +93,10 @@ public class AggregatorDetectionService
                     var versionInfo = FileVersionInfo.GetVersionInfo(exePath);
                     status.Version = versionInfo.FileVersion ?? versionInfo.ProductVersion;
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug("Version detection failed: {Error}", ex.Message);
+                }
 
                 // Service Verification (Dual-Mode: Dev vs Prod)
                 try

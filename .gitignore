@@ -12,3 +12,13 @@ yarn-error.log*
 pnpm-debug.log*
 .idea/
 .vscode/
+
+# Debug and verification logs
+firebase-debug.log
+verification_output*.txt
+verify-output*.txt
+*.log
+
+# Build artifacts
+tsconfig.build.tsbuildinfo
+tsconfig.tsbuildinfo
